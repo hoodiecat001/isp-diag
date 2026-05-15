@@ -247,9 +247,9 @@
     async function runSpeedTest() {
         // Use larger test files from Cloudflare's speed test (public, no CORS issues)
         const testUrls = [
-            'https://speed.cloudflare.com/__down?bytes=500000',      // 0.5 MB
-            'https://speed.cloudflare.com/__down?bytes=1000000',     // 1 MB
-            'https://speed.cloudflare.com/__down?bytes=2500000'      // 2.5 MB
+            'https://httpbin.org/bytes/524288',      // 0.5 MB
+            'https://httpbin.org/bytes/1048576',     // 1 MB
+            'https://httpbin.org/bytes/2621440'      // 2.5 MB
         ];
         
         let totalBits = 0;
