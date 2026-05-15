@@ -158,7 +158,7 @@
     <div class="card">
         <h1>
             <span>🔍</span>
-            ISP Speed & Diagnostic Test
+            ISP Speed & Diagnostic Tool
         </h1>
         <div class="sub">Check your internet speed and connection health</div>
 
@@ -171,7 +171,7 @@
         <strong>📱 For accurate results:</strong><br>
         • Connect to your WiFi network<br>
         • Close other apps and tabs<br>
-        • Test takes 30-45 seconds<br>
+        • Test takes 20-30 seconds<br>
         • Run the test 2-3 times for best results
     </div>
 
@@ -180,10 +180,7 @@
     </div>
 </div>
 
-<script type="module">
-    // Import netlify-speed-test library
-    import { runSpeedTest } from 'https://cdn.jsdelivr.net/npm/netlify-speed-test@1.0.0/dist/index.js';
-
+<script>
     const runBtn = document.getElementById('runBtn');
     const resultsDiv = document.getElementById('results');
 
@@ -208,37 +205,56 @@
         }
     }
 
-    // Run Netlify Speed Test
-    async function runNetlifySpeedTest() {
-        try {
-            const result = await runSpeedTest();
-            console.log('Speed test result:', result);
+    // Simple but effective speed test using multiple image downloads
+    async function runSimpleSpeedTest() {
+        // Use multiple test files from different sources
+        const testFiles = [
+            'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png',
+            'https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg',
+            'https://upload.wikimedia.org/wikipedia/commons/5/51/Google.png'
+        ];
+        
+        let totalBytes = 0;
+        let totalTime = 0;
+        let successCount = 0;
+        
+        for (let i = 0; i < testFiles.length; i++) {
+            const url = testFiles[i] + '?nocache=' + Date.now() + Math.random();
+            const startTime = performance.now();
             
-            // The result format may vary, let's handle different possibilities
-            let downloadSpeed = null;
-            
-            if (typeof result === 'number') {
-                downloadSpeed = result;
-            } else if (result && result.downloadSpeed) {
-                downloadSpeed = result.downloadSpeed;
-            } else if (result && result.download) {
-                downloadSpeed = result.download;
-            } else if (result && result.mbps) {
-                downloadSpeed = result.mbps;
-            } else if (result && result.speed) {
-                downloadSpeed = result.speed;
+            try {
+                const response = await fetch(url, { 
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache, no-store' }
+                });
+                const blob = await response.blob();
+                const endTime = performance.now();
+                const durationSec = (endTime - startTime) / 1000;
+                const bytes = blob.size;
+                
+                if (durationSec > 0 && bytes > 0 && durationSec < 5) {
+                    totalBytes += bytes;
+                    totalTime += durationSec;
+                    successCount++;
+                }
+                
+                await wait(200);
+            } catch(e) {
+                console.log('Download failed for:', url);
             }
-            
-            return downloadSpeed ? Math.round(downloadSpeed * 10) / 10 : null;
-        } catch(e) {
-            console.error('Netlify speed test error:', e);
-            return null;
         }
+        
+        if (successCount > 0 && totalTime > 0) {
+            const bitsPerSecond = (totalBytes * 8) / totalTime;
+            const mbps = bitsPerSecond / 1000000;
+            return Math.round(mbps * 10) / 10;
+        }
+        
+        return null;
     }
 
     // Detect actual connection type
     async function getActualConnectionType() {
-        // Try to reach the modem (192.168.1.1) - indicates local network
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -252,13 +268,11 @@
             // Cannot reach modem
         }
         
-        // Check if on mobile data via Network API
         const connection = navigator.connection || navigator.mozConnection;
         if (connection && connection.type === 'cellular') {
             return "Mobile Data (4G/5G)";
         }
         
-        // Check user agent
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (isMobile) {
             return "Mobile Data (4G/5G)";
@@ -285,7 +299,7 @@
 
     async function runDiagnostic() {
         runBtn.disabled = true;
-        runBtn.innerHTML = '<span class="loading"></span> Testing connection (30-45 seconds)...';
+        runBtn.innerHTML = '<span class="loading"></span> Testing connection (20-30 seconds)...';
         resultsDiv.style.display = 'block';
         resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Checking internet...</div>';
 
@@ -328,33 +342,11 @@
         await wait(300);
         const latency = await measureLatency();
         
-        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed...<br><span style="font-size:0.75rem">This takes about 20-30 seconds</span></div>';
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed...<br><span style="font-size:0.75rem">Downloading test files</span></div>';
         await wait(500);
         
-        let speedMbps = await runNetlifySpeedTest();
-        let speedSource = "Netlify Speed Test";
-        
-        // Fallback: If Netlify fails, try Cloudflare
-        if (speedMbps === null) {
-            resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Trying alternative server...</div>';
-            try {
-                const response = await fetch('https://speed.cloudflare.com/__down?bytes=5000000', {
-                    cache: 'no-store',
-                    headers: { 'Cache-Control': 'no-cache' }
-                });
-                const start = performance.now();
-                const data = await response.arrayBuffer();
-                const duration = (performance.now() - start) / 1000;
-                const bytes = data.byteLength;
-                
-                if (duration > 0 && bytes > 0) {
-                    speedMbps = Math.round(((bytes * 8) / duration) / 1000000 * 10) / 10;
-                    speedSource = "Cloudflare";
-                }
-            } catch(e) {
-                console.log('Cloudflare fallback failed:', e);
-            }
-        }
+        let speedMbps = await runSimpleSpeedTest();
+        let speedSource = "Standard";
         
         const connType = await getActualConnectionType();
         const code = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -366,7 +358,7 @@
         let recommendationClass = "";
         
         if (speedMbps !== null && speedMbps < 10) {
-            recommendation = "⚠️ Your speed is very slow. This could be due to weak signal, network congestion, or your plan limit.";
+            recommendation = "⚠️ Your speed is very slow. Please check your modem's optical power or consider upgrading your plan.";
             recommendationClass = "bad";
         } else if (latency !== null && latency > 150) {
             recommendation = "⚠️ Your latency is high, causing lag. This often indicates a signal or routing issue.";
@@ -395,7 +387,7 @@
             </div>
             <div class="result-item">
                 <span>🚀 Download Speed:</span>
-                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span><br><span style="font-size:0.7rem; color:#666;">via ${speedSource}</span></span>
+                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span></span>
             </div>
             <div class="result-item">
                 <span>📶 Connection Type:</span>
