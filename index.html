@@ -75,6 +75,7 @@
         }
         .good { color: #16a34a; font-weight: bold; }
         .bad { color: #dc2626; font-weight: bold; }
+        .medium { color: #f59e0b; font-weight: bold; }
         .code-box {
             background: #1e293b;
             color: #00ffcc;
@@ -112,10 +113,36 @@
             border-radius: 8px;
             font-size: 0.85rem;
         }
-        .wifi-icon {
-            background: #e3f2fd;
-            border-left-color: #2196f3;
+        .speed-meter {
+            background: #e8e8e8;
+            border-radius: 10px;
+            height: 8px;
+            margin: 10px 0;
+            overflow: hidden;
         }
+        .speed-fill {
+            background: #0066cc;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .speed-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-excellent { background: #dcfce7; color: #166534; }
+        .status-good { background: #dbeafe; color: #1e40af; }
+        .status-fair { background: #fed7aa; color: #9a3412; }
+        .status-poor { background: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body>
@@ -123,20 +150,21 @@
     <div class="card">
         <h1>
             <span>🔍</span>
-            Connection Diagnostic
+            ISP Speed & Diagnostic Test
         </h1>
-        <div class="sub">Run this test to help us fix your internet issue</div>
+        <div class="sub">Check your internet speed and connection health</div>
 
-        <button id="runBtn">▶ Start Test</button>
+        <button id="runBtn">▶ Start Full Test</button>
 
         <div id="results" class="results"></div>
     </div>
 
     <div class="card tip">
-        <strong>📱 Before testing:</strong><br>
-        • Make sure you're connected to WiFi or Ethernet<br>
-        • Close videos or downloads<br>
-        • Test takes 10-15 seconds
+        <strong>📱 For accurate results:</strong><br>
+        • Connect to your WiFi network<br>
+        • Close other apps and tabs<br>
+        • Test takes 30-40 seconds<br>
+        • For best results, test multiple times
     </div>
 
     <div class="footer">
@@ -171,74 +199,186 @@
 
     // Improved connection type detection
     function getConnectionType() {
-        // Method 1: Check if device is on WiFi using Network Information API
         const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-        
-        // Method 2: Check if it's a mobile device
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // Method 3: Try to detect via effectiveType but with correction
         if (connection) {
             const effectiveType = connection.effectiveType;
-            
-            // If it's a laptop/desktop (not mobile), assume WiFi/Ethernet
             if (!isMobile) {
-                // Check if ethernet is possible (no easy way, but default to WiFi)
-                return "WiFi";
+                return "WiFi / Ethernet";
             }
-            
-            // For mobile devices, report actual cellular type
             if (effectiveType === '4g') return "4G/LTE";
             if (effectiveType === '3g') return "3G";
             if (effectiveType === '2g') return "2G/Edge";
             if (effectiveType === 'slow-2g') return "Slow 2G";
         }
         
-        // Fallback: Check if user agent is mobile
         if (isMobile) {
-            return "Cellular (unknown type)";
+            return "Cellular";
+        }
+        return "WiFi / Ethernet";
+    }
+
+    // Speed test using multiple image downloads
+    async function runSpeedTest() {
+        const testImages = [
+            'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/800px-Cat03.jpg?t=' + Date.now(),
+            'https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Google.png/800px-Google.png?t=' + Date.now(),
+            'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/800px-Microsoft_logo.svg.png?t=' + Date.now()
+        ];
+        
+        let totalBytes = 0;
+        let totalTime = 0;
+        
+        for (let i = 0; i < testImages.length; i++) {
+            const startTime = performance.now();
+            try {
+                const response = await fetch(testImages[i], { cache: 'no-store' });
+                const blob = await response.blob();
+                const endTime = performance.now();
+                totalBytes += blob.size;
+                totalTime += (endTime - startTime);
+                await wait(500); // Small delay between tests
+            } catch(e) {
+                console.log('Speed test image failed:', e);
+            }
         }
         
-        // Default for laptops/desktops
-        return "WiFi / Ethernet";
+        if (totalTime > 0 && totalBytes > 0) {
+            // Convert to Mbps (bits per second)
+            const bitsPerSecond = (totalBytes * 8) / (totalTime / 1000);
+            const mbps = bitsPerSecond / 1000000;
+            return Math.round(mbps * 10) / 10;
+        }
+        return null;
+    }
+
+    function getSpeedRating(speedMbps) {
+        if (speedMbps === null) return { text: "Unable to measure", class: "status-poor" };
+        if (speedMbps >= 50) return { text: "Excellent", class: "status-excellent" };
+        if (speedMbps >= 25) return { text: "Good", class: "status-good" };
+        if (speedMbps >= 10) return { text: "Fair", class: "status-fair" };
+        return { text: "Poor", class: "status-poor" };
+    }
+
+    function getLatencyRating(latencyMs) {
+        if (latencyMs === null) return "Unknown";
+        if (latencyMs < 50) return "Excellent (<50ms)";
+        if (latencyMs < 100) return "Good (50-100ms)";
+        if (latencyMs < 200) return "Fair (100-200ms)";
+        return "Poor (>200ms)";
     }
 
     async function runDiagnostic() {
         // Disable button
         runBtn.disabled = true;
-        runBtn.innerHTML = '<span class="loading"></span> Testing...';
+        runBtn.innerHTML = '<span class="loading"></span> Running tests (30-40 seconds)...';
         resultsDiv.style.display = 'block';
-        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Running diagnostics...</div>';
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing internet connection...<br><span style="font-size:0.8rem">Please wait</span></div>';
 
+        // Step 1: Basic connectivity
         await wait(500);
         const internet = await checkInternet();
+        
+        if (!internet.online) {
+            // If no internet, skip speed test
+            const connType = getConnectionType();
+            const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+            
+            resultsDiv.innerHTML = `
+                <div class="result-item">
+                    <span>📡 Internet:</span>
+                    <span class="bad">No Internet Connection</span>
+                </div>
+                <div class="result-item">
+                    <span>📶 Connection Type:</span>
+                    <span>${connType}</span>
+                </div>
+                <div class="code-box">
+                    🔑 YOUR CODE: ${code}
+                </div>
+                <div style="margin-top: 16px; padding: 12px; background: #fee2e2; border-radius: 12px; color: #991b1b;">
+                    ⚠️ No internet detected. Please check your modem lights and cable connections.
+                </div>
+                <div style="margin-top: 16px; text-align: center;">
+                    <strong>📲 Send this screenshot to our support team</strong>
+                </div>
+            `;
+            
+            runBtn.disabled = false;
+            runBtn.innerHTML = '▶ Test Again';
+            return;
+        }
+        
+        // Step 2: Measure latency
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Measuring latency...</div>';
         await wait(300);
         const latency = await measureLatency();
-        await wait(300);
+        
+        // Step 3: Run speed test
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed...</div>';
+        await wait(500);
+        const speedMbps = await runSpeedTest();
+        
+        // Step 4: Get connection type
         const connType = getConnectionType();
-
-        // Generate support code
+        
+        // Step 5: Generate support code
         const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-
-        // Build results
+        
+        // Step 6: Get ratings
+        const speedRating = getSpeedRating(speedMbps);
+        const latencyRating = getLatencyRating(latency);
+        
+        // Determine overall recommendation
+        let recommendation = "";
+        let recommendationClass = "";
+        
+        if (speedMbps && speedMbps < 10) {
+            recommendation = "Your speed is very slow. This could be due to weak signal, network congestion, or your plan limit.";
+            recommendationClass = "bad";
+        } else if (latency && latency > 150) {
+            recommendation = "Your latency is high, which causes lag. This often indicates a signal or routing issue.";
+            recommendationClass = "bad";
+        } else if (speedMbps && speedMbps < 25) {
+            recommendation = "Your speed is adequate for browsing but may struggle with HD streaming or gaming.";
+            recommendationClass = "medium";
+        } else {
+            recommendation = "Your connection looks healthy. If you're still having issues, it might be a specific website or app problem.";
+            recommendationClass = "good";
+        }
+        
+        // Build results HTML
         resultsDiv.innerHTML = `
             <div class="result-item">
                 <span>📡 Internet:</span>
-                <span class="${internet.online ? 'good' : 'bad'}">${internet.message}</span>
+                <span class="good">Connected</span>
             </div>
             <div class="result-item">
                 <span>⚡ Latency:</span>
-                <span>${latency ? latency + ' ms' : 'Unable to measure'}</span>
+                <span>${latency ? latency + ' ms' : 'Unable to measure'} <span class="status-badge ${latency && latency < 100 ? 'status-excellent' : (latency && latency < 200 ? 'status-fair' : 'status-poor')}">${latencyRating}</span></span>
+            </div>
+            <div class="result-item">
+                <span>🚀 Download Speed:</span>
+                <span><strong>${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</strong> <span class="status-badge ${speedRating.class}">${speedRating.text}</span></span>
             </div>
             <div class="result-item">
                 <span>📶 Connection Type:</span>
                 <span>${connType}</span>
             </div>
+            <div class="speed-meter">
+                <div class="speed-fill" style="width: ${Math.min((speedMbps || 0) / 100 * 100, 100)}%"></div>
+            </div>
+            <div class="result-item" style="background: #f0f9ff; margin-top: 8px; border-radius: 8px;">
+                <span>💡 Recommendation:</span>
+                <span class="${recommendationClass}">${recommendation}</span>
+            </div>
             <div class="code-box">
                 🔑 YOUR CODE: ${code}
             </div>
             <div style="margin-top: 16px; text-align: center; background: #e6f7e6; padding: 12px; border-radius: 12px;">
-                <strong>📲 Send this code and screenshot to our support team on Messenger</strong>
+                <strong>📲 Send this screenshot to our support team on Messenger</strong><br>
+                <span style="font-size:0.75rem">Include the code: ${code}</span>
             </div>
         `;
 
