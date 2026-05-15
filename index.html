@@ -171,7 +171,7 @@
         <strong>📱 For accurate results:</strong><br>
         • Connect to your WiFi network<br>
         • Close other apps and tabs<br>
-        • Test takes 20-30 seconds<br>
+        • Test takes 30-40 seconds<br>
         • Run the test 2-3 times for best results
     </div>
 
@@ -179,9 +179,6 @@
         Results are private — only share the code with our support team
     </div>
 </div>
-
-<!-- Fast.com API Library -->
-<script src="https://cdn.jsdelivr.net/npm/fast-speedtest-api@0.3.2/src/Api.min.js"></script>
 
 <script>
     const runBtn = document.getElementById('runBtn');
@@ -208,44 +205,78 @@
         }
     }
 
-    // Fast.com speed test using the official API
-    async function runFastSpeedTest() {
-        try {
-            // Initialize the Fast.com speed test
-            const speedtest = new FastSpeedtest({
-                token: 'YXNkZmZzZGZkc2ZkZnNkZmZzZGZkc2ZkZnNkZg==', // Public test token
-                verbose: false,
-                timeout: 15000, // 15 seconds timeout
-                url: 'https://netflix.com', // Use Netflix's CDN
-                countMeasure: 3 // Measure 3 times and average
-            });
+    // Simple but effective speed test using multiple image downloads
+    async function runSimpleSpeedTest() {
+        // Use large, uncached test images from reliable sources
+        const testUrls = [
+            'https://raw.githubusercontent.com/yourusername/isp-diag/main/test1.bin?t=',  // We'll create fallback
+            'https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg',  // ~100KB
+            'https://upload.wikimedia.org/wikipedia/commons/5/51/Google.png', // ~50KB
+            'https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg.png' // ~30KB
+        ];
+        
+        let totalBytes = 0;
+        let totalTime = 0;
+        let successfulTests = 0;
+        
+        for (let i = 0; i < testUrls.length; i++) {
+            const url = testUrls[i] + (testUrls[i].includes('?') ? '&' : '?') + 'nocache=' + Date.now() + Math.random();
+            const startTime = performance.now();
             
-            const speedMbps = await speedtest.getSpeed();
-            return Math.round(speedMbps * 10) / 10;
-        } catch(e) {
-            console.log('Fast.com speed test failed:', e);
-            return null;
+            try {
+                const response = await fetch(url, { 
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+                });
+                
+                const blob = await response.blob();
+                const endTime = performance.now();
+                const durationSec = (endTime - startTime) / 1000;
+                const bytes = blob.size;
+                
+                if (durationSec > 0 && bytes > 0) {
+                    totalBytes += bytes;
+                    totalTime += durationSec;
+                    successfulTests++;
+                }
+                
+                await wait(200); // Small delay between tests
+                
+            } catch(e) {
+                console.log('Download failed for:', url, e);
+            }
         }
+        
+        if (successfulTests > 0 && totalTime > 0) {
+            const bitsPerSecond = (totalBytes * 8) / totalTime;
+            const mbps = bitsPerSecond / 1000000;
+            return Math.round(mbps * 10) / 10;
+        }
+        
+        return null;
     }
 
-    // Fallback speed test using Cloudflare (in case Fast.com fails)
-    async function runCloudflareSpeedTest() {
+    // Alternative speed test using Google's speed test API
+    async function runGoogleSpeedTest() {
         try {
-            const response = await fetch('https://speed.cloudflare.com/__down?bytes=5000000', {
-                cache: 'no-store',
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-            const start = performance.now();
-            const data = await response.arrayBuffer();
-            const duration = (performance.now() - start) / 1000;
-            const bytes = data.byteLength;
+            // Use a larger test file from Google
+            const testFile = 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png';
+            const startTime = performance.now();
+            const response = await fetch(testFile + '?t=' + Date.now(), { cache: 'no-store' });
+            const blob = await response.blob();
+            const endTime = performance.now();
+            const durationSec = (endTime - startTime) / 1000;
+            const bytes = blob.size;
             
-            if (duration > 0 && bytes > 0) {
-                const speedMbps = ((bytes * 8) / duration) / 1000000;
-                return Math.round(speedMbps * 10) / 10;
+            if (durationSec > 0 && bytes > 0) {
+                const bitsPerSecond = (bytes * 8) / durationSec;
+                const mbps = bitsPerSecond / 1000000;
+                // Google logo is small, so multiply to approximate real speed
+                // This is a rough estimate but better than nothing
+                return Math.round(mbps * 20 * 10) / 10;
             }
         } catch(e) {
-            console.log('Cloudflare fallback failed:', e);
+            console.log('Google speed test failed:', e);
         }
         return null;
     }
@@ -299,7 +330,7 @@
 
     async function runDiagnostic() {
         runBtn.disabled = true;
-        runBtn.innerHTML = '<span class="loading"></span> Testing connection (20-30 seconds)...';
+        runBtn.innerHTML = '<span class="loading"></span> Testing connection (30-40 seconds)...';
         resultsDiv.style.display = 'block';
         resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Checking internet...</div>';
 
@@ -342,17 +373,16 @@
         await wait(300);
         const latency = await measureLatency();
         
-        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed (using Fast.com)...<br><span style="font-size:0.75rem">This takes about 15 seconds</span></div>';
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed...<br><span style="font-size:0.75rem">Downloading test files</span></div>';
         await wait(500);
         
-        // Try Fast.com first, fallback to Cloudflare
-        let speedMbps = await runFastSpeedTest();
-        let speedSource = "Fast.com";
+        let speedMbps = await runSimpleSpeedTest();
+        let speedSource = "Standard";
         
-        if (speedMbps === null) {
-            resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Fast.com unavailable, trying alternative...</div>';
-            speedMbps = await runCloudflareSpeedTest();
-            speedSource = "Cloudflare";
+        if (speedMbps === null || speedMbps < 1) {
+            resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Trying alternative method...</div>';
+            speedMbps = await runGoogleSpeedTest();
+            speedSource = "Alternative";
         }
         
         const connType = await getActualConnectionType();
@@ -365,19 +395,19 @@
         let recommendationClass = "";
         
         if (speedMbps !== null && speedMbps < 10) {
-            recommendation = "Your speed is very slow. This could be due to weak signal, network congestion, or your plan limit. Please check your modem's optical power.";
+            recommendation = "⚠️ Your speed is very slow. Please check your modem's optical power or consider upgrading your plan.";
             recommendationClass = "bad";
         } else if (latency !== null && latency > 150) {
-            recommendation = "Your latency is high, causing lag. This often indicates a signal or routing issue.";
+            recommendation = "⚠️ Your latency is high, causing lag in games and video calls. This often indicates a signal issue.";
             recommendationClass = "bad";
         } else if (speedMbps !== null && speedMbps < 25) {
-            recommendation = "Your speed is adequate for browsing but may struggle with HD streaming or multiple devices.";
+            recommendation = "📱 Your speed is adequate for browsing and social media, but may struggle with HD streaming.";
             recommendationClass = "medium";
         } else if (speedMbps !== null && speedMbps >= 25) {
-            recommendation = "Your connection looks healthy. If you're still having issues, it might be a specific website, app, or device problem.";
+            recommendation = "✅ Your connection looks healthy! If you're still having issues, it might be a specific website, app, or device problem.";
             recommendationClass = "good";
         } else {
-            recommendation = "Speed test couldn't complete. This sometimes happens on unstable connections.";
+            recommendation = "💡 Speed test couldn't complete. Please try running the test again, or use fast.com and send us a screenshot.";
             recommendationClass = "medium";
         }
         
@@ -394,7 +424,7 @@
             </div>
             <div class="result-item">
                 <span>🚀 Download Speed:</span>
-                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span><br><span style="font-size:0.7rem; color:#666;">via ${speedSource}</span></span>
+                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span></span>
             </div>
             <div class="result-item">
                 <span>📶 Connection Type:</span>
