@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ISP Connection Diagnostic Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 1.6rem;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sub {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            width: 100%;
+            cursor: pointer;
+        }
+        button:active {
+            background: #0052a3;
+            transform: scale(0.98);
+        }
+        button:disabled {
+            background: #999;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 16px;
+            display: none;
+        }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        .good { color: #16a34a; font-weight: bold; }
+        .bad { color: #dc2626; font-weight: bold; }
+        .code-box {
+            background: #1e293b;
+            color: #00ffcc;
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 1.3rem;
+            font-family: monospace;
+            letter-spacing: 3px;
+            margin-top: 12px;
+        }
+        .loading {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #ccc;
+            border-top-color: #0066cc;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.7rem;
+            color: #999;
+            margin-top: 20px;
+        }
+        .tip {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h1>
+            <span>🔍</span>
+            Connection Diagnostic
+        </h1>
+        <div class="sub">Run this test to help us fix your internet issue</div>
+
+        <button id="runBtn">▶ Start Test</button>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <div class="card tip">
+        <strong>📱 Before testing:</strong><br>
+        • Make sure you're connected to WiFi<br>
+        • Close videos or downloads<br>
+        • Test takes 10-15 seconds
+    </div>
+
+    <div class="footer">
+        Results are private — only share the code with our support team
+    </div>
+</div>
+
+<script>
+    const runBtn = document.getElementById('runBtn');
+    const resultsDiv = document.getElementById('results');
+
+    function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function checkInternet() {
+        try {
+            await fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-store' });
+            return { online: true, message: "Connected" };
+        } catch(e) {
+            return { online: false, message: "No Internet" };
+        }
+    }
+
+    async function measureLatency() {
+        const start = performance.now();
+        try {
+            await fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-store' });
+            return Math.round(performance.now() - start);
+        } catch(e) {
+            return null;
+        }
+    }
+
+    function getConnectionType() {
+        const conn = navigator.connection || navigator.mozConnection;
+        if (conn && conn.effectiveType) return conn.effectiveType.toUpperCase();
+        return "Unknown";
+    }
+
+    async function runDiagnostic() {
+        // Disable button
+        runBtn.disabled = true;
+        runBtn.innerHTML = '<span class="loading"></span> Testing...';
+        resultsDiv.style.display = 'block';
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Running diagnostics...</div>';
+
+        await wait(500);
+        const internet = await checkInternet();
+        await wait(300);
+        const latency = await measureLatency();
+        await wait(300);
+        const connType = getConnectionType();
+
+        // Generate support code
+        const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+        // Build results
+        resultsDiv.innerHTML = `
+            <div class="result-item">
+                <span>📡 Internet:</span>
+                <span class="${internet.online ? 'good' : 'bad'}">${internet.message}</span>
+            </div>
+            <div class="result-item">
+                <span>⚡ Latency:</span>
+                <span>${latency ? latency + ' ms' : 'Unable to measure'}</span>
+            </div>
+            <div class="result-item">
+                <span>📶 Connection:</span>
+                <span>${connType}</span>
+            </div>
+            <div class="code-box">
+                🔑 YOUR CODE: ${code}
+            </div>
+            <div style="margin-top: 16px; text-align: center; background: #e6f7e6; padding: 12px; border-radius: 12px;">
+                <strong>📲 Send this code to our support team on Facebook Messenger</strong>
+            </div>
+        `;
+
+        runBtn.disabled = false;
+        runBtn.innerHTML = '▶ Test Again';
+    }
+
+    runBtn.addEventListener('click', runDiagnostic);
+</script>
+</body>
+</html>
