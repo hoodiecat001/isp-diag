@@ -248,9 +248,9 @@
     // Method 1: Try Cloudflare
     try {
         const testUrls = [
-            'https://speed.cloudflare.com/__down?bytes=500000',
-            'https://speed.cloudflare.com/__down?bytes=1000000',
-            'https://speed.cloudflare.com/__down?bytes=2500000'
+            'https://httpcan.org/bytes/524288',   // 0.5MB
+            'https://httpcan.org/bytes/1048576',  // 1MB
+            'https://httpcan.org/bytes/2621440'   // 2.5MB
         ];
         
         let totalBits = 0;
