@@ -245,52 +245,73 @@
 
     // Improved speed test using larger files and better calculation
     async function runSpeedTest() {
-        // Use larger test files from Cloudflare's speed test (public, no CORS issues)
+    // Method 1: Try Cloudflare
+    try {
         const testUrls = [
-            'https://httpbin.org/bytes/524288',      // 0.5 MB
-            'https://httpbin.org/bytes/1048576',     // 1 MB
-            'https://httpbin.org/bytes/2621440'      // 2.5 MB
+            'https://speed.cloudflare.com/__down?bytes=500000',
+            'https://speed.cloudflare.com/__down?bytes=1000000',
+            'https://speed.cloudflare.com/__down?bytes=2500000'
         ];
         
         let totalBits = 0;
         let totalTime = 0;
-        let successfulTests = 0;
+        let successCount = 0;
         
-        for (let i = 0; i < testUrls.length; i++) {
-            const startTime = performance.now();
+        for (let url of testUrls) {
             try {
-                const response = await fetch(testUrls[i] + '&t=' + Date.now(), { 
+                const start = performance.now();
+                const response = await fetch(url + '&t=' + Date.now(), { 
                     cache: 'no-store',
                     headers: { 'Cache-Control': 'no-cache' }
                 });
                 const data = await response.arrayBuffer();
-                const endTime = performance.now();
-                
-                const bytesLoaded = data.byteLength;
-                const timeSec = (endTime - startTime) / 1000;
-                
-                if (timeSec > 0 && bytesLoaded > 0) {
-                    const bits = bytesLoaded * 8;
-                    const speedMbps = (bits / timeSec) / 1000000;
-                    totalBits += bits;
-                    totalTime += timeSec;
-                    successfulTests++;
+                const duration = (performance.now() - start) / 1000;
+                if (duration > 0 && data.byteLength > 0) {
+                    totalBits += data.byteLength * 8;
+                    totalTime += duration;
+                    successCount++;
                 }
-                
-                await wait(500); // Delay between tests
+                await new Promise(r => setTimeout(r, 300));
             } catch(e) {
-                console.log('Speed test failed:', e);
+                console.log('Cloudflare test failed:', e);
             }
         }
         
-        if (successfulTests > 0 && totalTime > 0) {
-            const avgSpeedMbps = ((totalBits / totalTime) / 1000000);
-            return Math.round(avgSpeedMbps * 10) / 10;
+        if (successCount > 0 && totalTime > 0) {
+            return Math.round(((totalBits / totalTime) / 1000000) * 10) / 10;
         }
-        
-        return null;
+    } catch(e) {
+        console.log('Primary speed test failed:', e);
     }
-
+    
+    // Method 2: Fallback to image-based test
+    try {
+        const img = new Image();
+        const start = performance.now();
+        let loaded = false;
+        
+        const imgPromise = new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+        });
+        
+        img.src = 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png?t=' + Date.now();
+        
+        const success = await imgPromise;
+        const duration = (performance.now() - start) / 1000;
+        
+        if (success && duration > 0) {
+            // Google logo is approximately 20KB
+            const bits = 20 * 1024 * 8;
+            const speedMbps = (bits / duration) / 1000000;
+            return Math.round(speedMbps * 10) / 10;
+        }
+    } catch(e) {
+        console.log('Fallback speed test failed:', e);
+    }
+    
+    return null;
+}
     function getSpeedRating(speedMbps) {
         if (speedMbps === null) return { text: "Unable to measure", class: "status-poor" };
         if (speedMbps >= 50) return { text: "Excellent", class: "status-excellent" };
