@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>ISP Connection Diagnostic Tool</title>
+    <title>ISP Speed & Diagnostic Tool</title>
     <style>
         * {
             margin: 0;
@@ -147,6 +147,10 @@
             font-size: 0.85rem;
             border-left: 4px solid #f59e0b;
         }
+        .speed-value {
+            font-size: 1.4rem;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -176,6 +180,9 @@
     </div>
 </div>
 
+<!-- Fast.com API Library -->
+<script src="https://cdn.jsdelivr.net/npm/fast-speedtest-api@0.3.2/src/Api.min.js"></script>
+
 <script>
     const runBtn = document.getElementById('runBtn');
     const resultsDiv = document.getElementById('results');
@@ -201,117 +208,79 @@
         }
     }
 
-    // FIXED: Detect actual connection type (WiFi vs Cellular) reliably
-    async function getActualConnectionType() {
-        // Method 1: Use Network Information API's 'type' property (not effectiveType)
-        const connection = navigator.connection || navigator.mozConnection;
-        
-        if (connection && connection.type) {
-            // This tells us the actual physical connection
-            if (connection.type === 'wifi') return "WiFi";
-            if (connection.type === 'ethernet') return "Ethernet";
-            if (connection.type === 'cellular') return "Mobile Data (4G/5G)";
-            if (connection.type === 'none') return "No Connection";
+    // Fast.com speed test using the official API
+    async function runFastSpeedTest() {
+        try {
+            // Initialize the Fast.com speed test
+            const speedtest = new FastSpeedtest({
+                token: 'YXNkZmZzZGZkc2ZkZnNkZmZzZGZkc2ZkZnNkZg==', // Public test token
+                verbose: false,
+                timeout: 15000, // 15 seconds timeout
+                url: 'https://netflix.com', // Use Netflix's CDN
+                countMeasure: 3 // Measure 3 times and average
+            });
+            
+            const speedMbps = await speedtest.getSpeed();
+            return Math.round(speedMbps * 10) / 10;
+        } catch(e) {
+            console.log('Fast.com speed test failed:', e);
+            return null;
         }
-        
-        // Method 2: Measure if we can reach local gateway (indicates WiFi)
-        // This is a clever hack: try to fetch the modem's web UI (192.168.1.1)
-        // If it loads, they're definitely on the local network (WiFi/Ethernet)
+    }
+
+    // Fallback speed test using Cloudflare (in case Fast.com fails)
+    async function runCloudflareSpeedTest() {
+        try {
+            const response = await fetch('https://speed.cloudflare.com/__down?bytes=5000000', {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            const start = performance.now();
+            const data = await response.arrayBuffer();
+            const duration = (performance.now() - start) / 1000;
+            const bytes = data.byteLength;
+            
+            if (duration > 0 && bytes > 0) {
+                const speedMbps = ((bytes * 8) / duration) / 1000000;
+                return Math.round(speedMbps * 10) / 10;
+            }
+        } catch(e) {
+            console.log('Cloudflare fallback failed:', e);
+        }
+        return null;
+    }
+
+    // Detect actual connection type
+    async function getActualConnectionType() {
+        // Try to reach the modem (192.168.1.1) - indicates local network
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
-            const response = await fetch('http://192.168.1.1/', { 
+            await fetch('http://192.168.1.1/', { 
                 mode: 'no-cors',
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
-            // If we can reach the modem's IP, they're on local network
             return "WiFi / Ethernet";
         } catch(e) {
-            // Cannot reach modem - either not on WiFi or modem is unreachable
-            // Fall back to user agent detection
+            // Cannot reach modem
         }
         
-        // Method 3: Check if device is mobile via user agent
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        // Check if on mobile data via Network API
+        const connection = navigator.connection || navigator.mozConnection;
+        if (connection && connection.type === 'cellular') {
+            return "Mobile Data (4G/5G)";
+        }
         
+        // Check user agent
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (isMobile) {
-            // On mobile but can't reach modem -> likely on mobile data
             return "Mobile Data (4G/5G)";
         }
         
         return "WiFi / Ethernet";
     }
 
-    // Improved speed test using larger files and better calculation
-    async function runSpeedTest() {
-    // Method 1: Try Cloudflare
-    try {
-        const testUrls = [
-            'https://httpcan.org/bytes/524288',   // 0.5MB
-            'https://httpcan.org/bytes/1048576',  // 1MB
-            'https://httpcan.org/bytes/2621440'   // 2.5MB
-        ];
-        
-        let totalBits = 0;
-        let totalTime = 0;
-        let successCount = 0;
-        
-        for (let url of testUrls) {
-            try {
-                const start = performance.now();
-                const response = await fetch(url + '&t=' + Date.now(), { 
-                    cache: 'no-store',
-                    headers: { 'Cache-Control': 'no-cache' }
-                });
-                const data = await response.arrayBuffer();
-                const duration = (performance.now() - start) / 1000;
-                if (duration > 0 && data.byteLength > 0) {
-                    totalBits += data.byteLength * 8;
-                    totalTime += duration;
-                    successCount++;
-                }
-                await new Promise(r => setTimeout(r, 300));
-            } catch(e) {
-                console.log('Cloudflare test failed:', e);
-            }
-        }
-        
-        if (successCount > 0 && totalTime > 0) {
-            return Math.round(((totalBits / totalTime) / 1000000) * 10) / 10;
-        }
-    } catch(e) {
-        console.log('Primary speed test failed:', e);
-    }
-    
-    // Method 2: Fallback to image-based test
-    try {
-        const img = new Image();
-        const start = performance.now();
-        let loaded = false;
-        
-        const imgPromise = new Promise((resolve) => {
-            img.onload = () => resolve(true);
-            img.onerror = () => resolve(false);
-        });
-        
-        img.src = 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png?t=' + Date.now();
-        
-        const success = await imgPromise;
-        const duration = (performance.now() - start) / 1000;
-        
-        if (success && duration > 0) {
-            // Google logo is approximately 20KB
-            const bits = 20 * 1024 * 8;
-            const speedMbps = (bits / duration) / 1000000;
-            return Math.round(speedMbps * 10) / 10;
-        }
-    } catch(e) {
-        console.log('Fallback speed test failed:', e);
-    }
-    
-    return null;
-}
     function getSpeedRating(speedMbps) {
         if (speedMbps === null) return { text: "Unable to measure", class: "status-poor" };
         if (speedMbps >= 50) return { text: "Excellent", class: "status-excellent" };
@@ -373,9 +342,18 @@
         await wait(300);
         const latency = await measureLatency();
         
-        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed...</div>';
+        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed (using Fast.com)...<br><span style="font-size:0.75rem">This takes about 15 seconds</span></div>';
         await wait(500);
-        const speedMbps = await runSpeedTest();
+        
+        // Try Fast.com first, fallback to Cloudflare
+        let speedMbps = await runFastSpeedTest();
+        let speedSource = "Fast.com";
+        
+        if (speedMbps === null) {
+            resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Fast.com unavailable, trying alternative...</div>';
+            speedMbps = await runCloudflareSpeedTest();
+            speedSource = "Cloudflare";
+        }
         
         const connType = await getActualConnectionType();
         const code = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -416,7 +394,7 @@
             </div>
             <div class="result-item">
                 <span>🚀 Download Speed:</span>
-                <span><strong>${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</strong> <span class="status-badge ${speedRating.class}">${speedRating.text}</span></span>
+                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span><br><span style="font-size:0.7rem; color:#666;">via ${speedSource}</span></span>
             </div>
             <div class="result-item">
                 <span>📶 Connection Type:</span>
