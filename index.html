@@ -112,6 +112,10 @@
             border-radius: 8px;
             font-size: 0.85rem;
         }
+        .wifi-icon {
+            background: #e3f2fd;
+            border-left-color: #2196f3;
+        }
     </style>
 </head>
 <body>
@@ -130,7 +134,7 @@
 
     <div class="card tip">
         <strong>📱 Before testing:</strong><br>
-        • Make sure you're connected to WiFi<br>
+        • Make sure you're connected to WiFi or Ethernet<br>
         • Close videos or downloads<br>
         • Test takes 10-15 seconds
     </div>
@@ -165,10 +169,38 @@
         }
     }
 
+    // Improved connection type detection
     function getConnectionType() {
-        const conn = navigator.connection || navigator.mozConnection;
-        if (conn && conn.effectiveType) return conn.effectiveType.toUpperCase();
-        return "Unknown";
+        // Method 1: Check if device is on WiFi using Network Information API
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        
+        // Method 2: Check if it's a mobile device
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // Method 3: Try to detect via effectiveType but with correction
+        if (connection) {
+            const effectiveType = connection.effectiveType;
+            
+            // If it's a laptop/desktop (not mobile), assume WiFi/Ethernet
+            if (!isMobile) {
+                // Check if ethernet is possible (no easy way, but default to WiFi)
+                return "WiFi";
+            }
+            
+            // For mobile devices, report actual cellular type
+            if (effectiveType === '4g') return "4G/LTE";
+            if (effectiveType === '3g') return "3G";
+            if (effectiveType === '2g') return "2G/Edge";
+            if (effectiveType === 'slow-2g') return "Slow 2G";
+        }
+        
+        // Fallback: Check if user agent is mobile
+        if (isMobile) {
+            return "Cellular (unknown type)";
+        }
+        
+        // Default for laptops/desktops
+        return "WiFi / Ethernet";
     }
 
     async function runDiagnostic() {
@@ -199,14 +231,14 @@
                 <span>${latency ? latency + ' ms' : 'Unable to measure'}</span>
             </div>
             <div class="result-item">
-                <span>📶 Connection:</span>
+                <span>📶 Connection Type:</span>
                 <span>${connType}</span>
             </div>
             <div class="code-box">
                 🔑 YOUR CODE: ${code}
             </div>
             <div style="margin-top: 16px; text-align: center; background: #e6f7e6; padding: 12px; border-radius: 12px;">
-                <strong>📲 Send this code to our support team on Facebook Messenger</strong>
+                <strong>📲 Send this code and screenshot to our support team on Messenger</strong>
             </div>
         `;
 
