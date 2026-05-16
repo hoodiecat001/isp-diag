@@ -204,7 +204,9 @@
     const runBtn = document.getElementById('runBtn');
     const resultsDiv = document.getElementById('results');
     
-    // Progress elements
+    // Use test file from SAME domain (no CORS issues)
+    const TEST_FILE_URL = 'https://hoodiecat001.github.io/isp-diag/testfile.bin';
+    
     let fillDiv, liveSpeedSpan;
     
     function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -228,11 +230,10 @@
         }
     }
 
-    // Speed test using Cloudflare's CORS-friendly endpoint (works everywhere)
-    async function runSpeedTest() {
+    // Speed test using file from SAME DOMAIN (no CORS!)
+    async function runSameDomainSpeedTest() {
         try {
-            // Cloudflare sends exactly 10MB of data with CORS headers enabled
-            const url = 'https://hoodiecat001.github.io/isp-diag/testfile.bin'
+            const url = TEST_FILE_URL + '?t=' + Date.now();
             const startTime = performance.now();
             
             const response = await fetch(url, { 
@@ -240,7 +241,10 @@
                 headers: { 'Cache-Control': 'no-cache, no-store' }
             });
             
-            const totalBytes = 10485760; // 10MB in bytes
+            // Get file size from Content-Length header
+            const contentLength = response.headers.get('Content-Length');
+            const totalBytes = contentLength ? parseInt(contentLength) : null;
+            
             const reader = response.body.getReader();
             let receivedLength = 0;
             let lastUpdate = performance.now();
@@ -252,11 +256,13 @@
                 
                 const now = performance.now();
                 if (now - lastUpdate > 100) {
-                    const percent = (receivedLength / totalBytes) * 100;
                     const elapsedSec = (now - startTime) / 1000;
                     const currentSpeedMbps = ((receivedLength * 8) / elapsedSec) / 1000000;
                     
-                    if (fillDiv) fillDiv.style.width = Math.min(percent, 100) + '%';
+                    if (fillDiv) {
+                        const percent = totalBytes ? (receivedLength / totalBytes) * 100 : 50;
+                        fillDiv.style.width = Math.min(percent, 100) + '%';
+                    }
                     if (liveSpeedSpan) liveSpeedSpan.innerText = currentSpeedMbps.toFixed(1);
                     lastUpdate = now;
                 }
@@ -271,7 +277,7 @@
                 return Math.round(mbps * 10) / 10;
             }
         } catch(e) {
-            console.error('Speed test failed:', e);
+            console.error('Same-domain speed test failed:', e);
         }
         return null;
     }
@@ -346,10 +352,7 @@
                     🔑 YOUR CODE: ${code}
                 </div>
                 <div class="warn-box">
-                    ⚠️ No internet detected. Please check:<br>
-                    • Your modem lights (PON should be solid)<br>
-                    • Cables are securely connected<br>
-                    • Try restarting your modem
+                    ⚠️ No internet detected. Please check your modem and cables.
                 </div>
                 <div style="margin-top: 16px; text-align: center;">
                     <strong>📲 Send this screenshot to our support team</strong>
@@ -373,7 +376,7 @@
         resultsDiv.innerHTML = `
             <div style="text-align:center">
                 <span class="loading"></span> Testing download speed...<br>
-                <span style="font-size:0.75rem">Downloading 10MB test file</span>
+                <span style="font-size:0.75rem">Downloading test file from our server</span>
             </div>
             <div class="progress-bar">
                 <div id="progressFill" class="progress-fill" style="width: 0%"></div>
@@ -388,8 +391,8 @@
         
         await wait(500);
         
-        const speedMbps = await runSpeedTest();
-        const speedSource = "Cloudflare";
+        const speedMbps = await runSameDomainSpeedTest();
+        const speedSource = "ISP Server";
         
         const connType = await getActualConnectionType();
         const code = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -401,19 +404,19 @@
         let recommendationClass = "";
         
         if (speedMbps !== null && speedMbps < 10) {
-            recommendation = "⚠️ Your speed is very slow. Please check your modem's optical power or consider upgrading your plan.";
+            recommendation = "⚠️ Your speed is very slow. Please check your modem's optical power.";
             recommendationClass = "bad";
         } else if (latency !== null && latency > 150) {
-            recommendation = "⚠️ Your latency is high, causing lag. This often indicates a signal or routing issue.";
+            recommendation = "⚠️ Your latency is high. This often indicates a signal issue.";
             recommendationClass = "bad";
         } else if (speedMbps !== null && speedMbps < 25) {
-            recommendation = "📱 Your speed is adequate for browsing but may struggle with HD streaming or multiple devices.";
+            recommendation = "📱 Your speed is adequate for browsing but may struggle with HD streaming.";
             recommendationClass = "medium";
         } else if (speedMbps !== null && speedMbps >= 25) {
-            recommendation = "✅ Your connection looks healthy! If you're still having issues, it might be a specific website, app, or device problem.";
+            recommendation = "✅ Your connection looks healthy!";
             recommendationClass = "good";
         } else {
-            recommendation = "💡 Speed test couldn't complete. Please run fast.com manually and send us a screenshot of the result.";
+            recommendation = "💡 Speed test couldn't complete. Please run fast.com manually.";
             recommendationClass = "medium";
         }
         
@@ -426,7 +429,7 @@
             </div>
             <div class="result-item">
                 <span>⚡ Latency (Ping):</span>
-                <span>${latency ? latency + ' ms' : 'Unable to measure'} <span class="status-badge ${latency && latency < 100 ? 'status-excellent' : (latency && latency < 200 ? 'status-fair' : 'status-poor')}">${latencyRating}</span></span>
+                <span>${latency ? latency + ' ms' : 'Unable to measure'} <span class="status-badge">${latencyRating}</span></span>
             </div>
             <div class="result-item">
                 <span>🚀 Download Speed:</span>
