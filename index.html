@@ -151,6 +151,26 @@
             font-size: 0.85rem;
             border-left: 4px solid #f59e0b;
         }
+        .progress-bar {
+            background: #e0e0e0;
+            border-radius: 10px;
+            height: 20px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: #0066cc;
+            height: 100%;
+            width: 0%;
+            transition: width 0.1s;
+            border-radius: 10px;
+        }
+        .live-speed {
+            text-align: center;
+            font-size: 0.9rem;
+            margin-top: 8px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -171,7 +191,7 @@
         <strong>📱 For accurate results:</strong><br>
         • Connect to your WiFi network<br>
         • Close other apps and tabs<br>
-        • Test takes 20-30 seconds<br>
+        • Test takes 20-40 seconds<br>
         • Run the test 2-3 times for best results
     </div>
 
@@ -184,6 +204,16 @@
     const runBtn = document.getElementById('runBtn');
     const resultsDiv = document.getElementById('results');
 
+    // ============================================================
+    // IMPORTANT: CHANGE THIS TO YOUR GITHUB USERNAME
+    // Example: 'https://juan dela cruz.github.io/isp-diag/testfile.bin'
+    // ============================================================
+    const GITHUB_USERNAME = 'YOUR_USERNAME_HERE';  // <-- CHANGE THIS
+    const TEST_FILE_URL = `https://${GITHUB_USERNAME}.github.io/isp-diag/testfile.bin`;
+    
+    // Progress elements (will be created dynamically)
+    let progressDiv, fillDiv, liveSpeedSpan;
+    
     function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     async function checkInternet() {
@@ -205,13 +235,62 @@
         }
     }
 
-    // Simple but effective speed test using multiple image downloads
-    async function runSimpleSpeedTest() {
-        // Use multiple test files from different sources
+    // Speed test using your hosted file on GitHub Pages
+    async function runHostedSpeedTest() {
+        try {
+            const url = TEST_FILE_URL + '?t=' + Date.now();
+            const startTime = performance.now();
+            
+            const response = await fetch(url, { 
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache, no-store' }
+            });
+            
+            // Get total file size from Content-Length header
+            const contentLength = response.headers.get('Content-Length');
+            const totalBytes = contentLength ? parseInt(contentLength) : 10485760; // Default to 10MB
+            
+            const reader = response.body.getReader();
+            let receivedLength = 0;
+            let lastUpdate = performance.now();
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                receivedLength += value.length;
+                
+                // Update progress every 100ms
+                const now = performance.now();
+                if (now - lastUpdate > 100) {
+                    const percent = (receivedLength / totalBytes) * 100;
+                    const elapsedSec = (now - startTime) / 1000;
+                    const currentSpeedMbps = ((receivedLength * 8) / elapsedSec) / 1000000;
+                    
+                    if (fillDiv) fillDiv.style.width = Math.min(percent, 100) + '%';
+                    if (liveSpeedSpan) liveSpeedSpan.innerText = currentSpeedMbps.toFixed(1) + ' Mbps';
+                    lastUpdate = now;
+                }
+            }
+            
+            const endTime = performance.now();
+            const durationSec = (endTime - startTime) / 1000;
+            
+            if (durationSec > 0 && receivedLength > 0) {
+                const bitsPerSecond = (receivedLength * 8) / durationSec;
+                const mbps = bitsPerSecond / 1000000;
+                return Math.round(mbps * 10) / 10;
+            }
+        } catch(e) {
+            console.error('Hosted speed test failed:', e);
+        }
+        return null;
+    }
+
+    // Fallback speed test using multiple image downloads (if hosted file fails)
+    async function runFallbackSpeedTest() {
         const testFiles = [
             'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png',
-            'https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg',
-            'https://upload.wikimedia.org/wikipedia/commons/5/51/Google.png'
+            'https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg'
         ];
         
         let totalBytes = 0;
@@ -219,7 +298,7 @@
         let successCount = 0;
         
         for (let i = 0; i < testFiles.length; i++) {
-            const url = testFiles[i] + '?nocache=' + Date.now() + Math.random();
+            const url = testFiles[i] + '?nocache=' + Date.now();
             const startTime = performance.now();
             
             try {
@@ -228,8 +307,7 @@
                     headers: { 'Cache-Control': 'no-cache, no-store' }
                 });
                 const blob = await response.blob();
-                const endTime = performance.now();
-                const durationSec = (endTime - startTime) / 1000;
+                const durationSec = (performance.now() - startTime) / 1000;
                 const bytes = blob.size;
                 
                 if (durationSec > 0 && bytes > 0 && durationSec < 5) {
@@ -237,10 +315,9 @@
                     totalTime += durationSec;
                     successCount++;
                 }
-                
                 await wait(200);
             } catch(e) {
-                console.log('Download failed for:', url);
+                console.log('Fallback download failed');
             }
         }
         
@@ -249,7 +326,6 @@
             const mbps = bitsPerSecond / 1000000;
             return Math.round(mbps * 10) / 10;
         }
-        
         return null;
     }
 
@@ -299,7 +375,7 @@
 
     async function runDiagnostic() {
         runBtn.disabled = true;
-        runBtn.innerHTML = '<span class="loading"></span> Testing connection (20-30 seconds)...';
+        runBtn.innerHTML = '<span class="loading"></span> Testing connection (20-40 seconds)...';
         resultsDiv.style.display = 'block';
         resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Checking internet...</div>';
 
@@ -338,15 +414,43 @@
             return;
         }
         
-        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Measuring latency...</div>';
+        resultsDiv.innerHTML = `
+            <div style="text-align:center">
+                <span class="loading"></span> Measuring latency...
+            </div>
+        `;
         await wait(300);
         const latency = await measureLatency();
         
-        resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Testing download speed...<br><span style="font-size:0.75rem">Downloading test files</span></div>';
+        // Create progress bar UI
+        resultsDiv.innerHTML = `
+            <div style="text-align:center">
+                <span class="loading"></span> Testing download speed...<br>
+                <span style="font-size:0.75rem">Downloading test file from our server</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="live-speed">
+                Current speed: <span id="liveSpeed">0</span> Mbps
+            </div>
+        `;
+        
+        // Get references to progress elements
+        fillDiv = document.getElementById('progressFill');
+        liveSpeedSpan = document.getElementById('liveSpeed');
+        
         await wait(500);
         
-        let speedMbps = await runSimpleSpeedTest();
-        let speedSource = "Standard";
+        // Try hosted file first, then fallback
+        let speedMbps = await runHostedSpeedTest();
+        let speedSource = "ISP Server";
+        
+        if (speedMbps === null) {
+            resultsDiv.innerHTML = '<div style="text-align:center"><span class="loading"></span> Trying alternative method...</div>';
+            speedMbps = await runFallbackSpeedTest();
+            speedSource = "Alternative";
+        }
         
         const connType = await getActualConnectionType();
         const code = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -387,7 +491,7 @@
             </div>
             <div class="result-item">
                 <span>🚀 Download Speed:</span>
-                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span></span>
+                <span><span class="speed-value">${speedMbps ? speedMbps + ' Mbps' : 'Unable to measure'}</span> <span class="status-badge ${speedRating.class}">${speedRating.text}</span><br><span style="font-size:0.7rem; color:#666;">via ${speedSource}</span></span>
             </div>
             <div class="result-item">
                 <span>📶 Connection Type:</span>
